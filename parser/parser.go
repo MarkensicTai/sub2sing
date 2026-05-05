@@ -33,11 +33,21 @@ type ProxyNode struct {
 	ObfsPassword string
 	HopInterval  string
 
+	// VLESS 专用
+	UUID           string
+	Flow           string
+	PacketEncoding string
+
+	// TUIC 专用
+	CongestionControl string
+	UDPRelayMode      string
+	ZeroRTTHandshake  bool
+
 	// 传输层
-	Network   string // tcp, udp
-	Transport string // ws, grpc, httpupgrade
-	Host      string // transport host
-	Path      string // ws/httpupgrade path
+	Network     string // tcp, udp
+	Transport   string // ws, grpc, httpupgrade
+	Host        string // transport host
+	Path        string // ws/httpupgrade path
 	ServiceName string // grpc service name
 }
 
@@ -56,12 +66,16 @@ func ParseShareLink(raw string) (*ProxyNode, error) {
 	switch u.Scheme {
 	case "trojan":
 		return parseTrojan(u)
-	case "hysteria2":
+	case "hysteria2", "hy2":
 		return parseHysteria2(u)
 	case "anytls":
 		return parseAnyTLS(u)
 	case "ss":
 		return parseShadowsocks(u)
+	case "tuic":
+		return parseTuic(u)
+	case "vless":
+		return parseVLess(u)
 	default:
 		return nil, nil // 忽略不支持的协议
 	}
@@ -69,7 +83,16 @@ func ParseShareLink(raw string) (*ProxyNode, error) {
 
 // ParseSubscription 解析 base64 编码的订阅内容
 func ParseSubscription(data []byte) ([]*ProxyNode, error) {
-	decoded, err := base64.StdEncoding.DecodeString(strings.TrimSpace(string(data)))
+	raw := strings.TrimSpace(string(data))
+	// 如果以协议头开头，说明是明文格式
+	if strings.HasPrefix(raw, "trojan://") || strings.HasPrefix(raw, "ss://") ||
+		strings.HasPrefix(raw, "hysteria2://") || strings.HasPrefix(raw, "hy2://") ||
+		strings.HasPrefix(raw, "anytls://") || strings.HasPrefix(raw, "tuic://") ||
+		strings.HasPrefix(raw, "vless://") {
+		return parseLines(strings.Split(raw, "\n")), nil
+	}
+
+	decoded, err := base64.StdEncoding.DecodeString(raw)
 	if err != nil {
 		// 尝试 URL-safe base64
 		decoded, err = base64.URLEncoding.DecodeString(strings.TrimSpace(string(data)))
@@ -89,8 +112,10 @@ func ParseSubscription(data []byte) ([]*ProxyNode, error) {
 		}
 	}
 
-	lines := strings.Split(string(decoded), "\n")
-	var nodes []*ProxyNode
+	return parseLines(strings.Split(string(decoded), "\n")), nil
+}
+
+func parseLines(lines []string) (nodes []*ProxyNode) {
 	for _, line := range lines {
 		node, err := ParseShareLink(line)
 		if err != nil {
@@ -100,7 +125,7 @@ func ParseSubscription(data []byte) ([]*ProxyNode, error) {
 			nodes = append(nodes, node)
 		}
 	}
-	return nodes, nil
+	return
 }
 
 // sanitizeTag 生成合法的 tag 名称

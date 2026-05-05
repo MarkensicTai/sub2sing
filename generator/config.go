@@ -121,16 +121,28 @@ type Outbound struct {
 	IdleSessionTimeout      string `json:"idle_session_timeout,omitempty"`
 	MinIdleSession          int    `json:"min_idle_session,omitempty"`
 
+	// VLESS 专用
+	UUID           string `json:"uuid,omitempty"`
+	Flow           string `json:"flow,omitempty"`
+	PacketEncoding string `json:"packet_encoding,omitempty"`
+
+	// TUIC 专用
+	CongestionControl string `json:"congestion_control,omitempty"`
+	UDPRelayMode      string `json:"udp_relay_mode,omitempty"`
+	ZeroRTTHandshake  bool   `json:"zero_rtt_handshake,omitempty"`
+	Heartbeat         string `json:"heartbeat,omitempty"`
+
 	// 域名解析
 	DomainResolver any `json:"domain_resolver,omitempty"`
 }
 
 type TLS struct {
-	Enabled    bool   `json:"enabled"`
-	ServerName string `json:"server_name,omitempty"`
-	Insecure   bool   `json:"insecure,omitempty"`
+	Enabled    bool     `json:"enabled"`
+	DisableSNI bool     `json:"disable_sni,omitempty"`
+	ServerName string   `json:"server_name,omitempty"`
+	Insecure   bool     `json:"insecure,omitempty"`
 	ALPN       []string `json:"alpn,omitempty"`
-	UTLS       *UTLS  `json:"utls,omitempty"`
+	UTLS       *UTLS    `json:"utls,omitempty"`
 }
 
 type UTLS struct {
@@ -171,7 +183,7 @@ type RuleSet struct {
 	Format         string `json:"format"`
 	URL            string `json:"url,omitempty"`
 	UpdateInterval string `json:"update_interval,omitempty"`
-	HTTPClient string `json:"http_client,omitempty"`
+	DownloadDetour string `json:"download_detour,omitempty"`
 }
 
 type RouteRule struct {
@@ -399,29 +411,29 @@ func buildRoute() *Route {
 				Tag:            "geosite-geolocation-!cn",
 				Type:           "remote",
 				Format:         "binary",
-				URL:            "https://testingcf.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/geosite-geolocation-!cn.srs",
-				HTTPClient: "",
+				URL:            "https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/geosite-geolocation-!cn.srs",
+				DownloadDetour: "direct",
 			},
 			{
 				Tag:            "geoip-cn",
 				Type:           "remote",
 				Format:         "binary",
-				URL:            "https://testingcf.jsdelivr.net/gh/SagerNet/sing-geoip@rule-set/geoip-cn.srs",
-				HTTPClient: "",
+				URL:            "https://cdn.jsdelivr.net/gh/SagerNet/sing-geoip@rule-set/geoip-cn.srs",
+				DownloadDetour: "direct",
 			},
 			{
 				Tag:            "geosite-cn",
 				Type:           "remote",
 				Format:         "binary",
-				URL:            "https://testingcf.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/geosite-cn.srs",
-				HTTPClient: "",
+				URL:            "https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/geosite-cn.srs",
+				DownloadDetour: "direct",
 			},
 			{
 				Tag:            "category-ads-all",
 				Type:           "remote",
 				Format:         "binary",
-				URL:            "https://testingcf.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/geosite-category-ads-all.srs",
-				HTTPClient: "",
+				URL:            "https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/geosite-category-ads-all.srs",
+				DownloadDetour: "direct",
 			},
 		},
 	}
@@ -444,7 +456,7 @@ func convertNode(n *parser.ProxyNode) Outbound {
 	}
 
 	// TLS 配置：trojan/hysteria2/anytls 都需要
-	if n.Type == "trojan" || n.Type == "hysteria2" || n.Type == "anytls" {
+	if n.Type == "trojan" || n.Type == "hysteria2" || n.Type == "anytls" || n.Type == "tuic" || n.Type == "vless" {
 		out.TLS = &TLS{
 			Enabled:    true,
 			ServerName: n.SNI,
@@ -452,7 +464,7 @@ func convertNode(n *parser.ProxyNode) Outbound {
 			ALPN:       n.ALPN,
 		}
 		// uTLS 指纹
-		if n.UTLSFingerprint != "" && (n.Type == "anytls" || n.Type == "trojan") {
+		if n.UTLSFingerprint != "" && (n.Type == "anytls" || n.Type == "trojan" || n.Type == "vless") {
 			out.TLS.UTLS = &UTLS{
 				Enabled:     true,
 				Fingerprint: n.UTLSFingerprint,
@@ -502,6 +514,26 @@ func convertNode(n *parser.ProxyNode) Outbound {
 		out.IdleSessionCheckInterval = "30s"
 		out.IdleSessionTimeout = "30s"
 		out.MinIdleSession = 0
+	}
+
+	// VLESS 专用
+	if n.Type == "vless" {
+		out.UUID = n.UUID
+		out.Flow = n.Flow
+		out.PacketEncoding = "xudp"
+		out.Multiplex = nil // vless 配套 reality 不适合 smux
+	}
+
+	// TUIC 专用
+	if n.Type == "tuic" {
+		out.UUID = n.UUID
+		if n.CongestionControl != "" {
+			out.CongestionControl = n.CongestionControl
+		}
+		if n.UDPRelayMode != "" {
+			out.UDPRelayMode = n.UDPRelayMode
+		}
+		out.Multiplex = nil // tuic 自带多路复用
 	}
 
 	return out
