@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(go build *)",
+      "Bash(GOOS=* go build *)",
+      "Bash(curl *)",
+      "Bash(./sub2sing *)",
+      "Bash(python3 *)"
+    ]
+  }
+}
